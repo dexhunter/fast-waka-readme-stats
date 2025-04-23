@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 from manager_download import DownloadManager as DM
 from manager_file import FileManager as FM
 
+from os import makedirs, path
+
 
 MAX_LANGUAGES = 5  # Number of top languages to add to chart, for each year quarter
 GRAPH_PATH = f"{FM.ASSETS_DIR}/bar_graph.png"  # Chart saving path.
@@ -20,6 +22,8 @@ async def create_loc_graph(yearly_data: Dict, save_path: str):
     :param yearly_data: GitHub user yearly data.
     :param save_path: Path to save the graph file.
     """
+    makedirs(path.dirname(save_path), exist_ok=True)
+
     colors = await DM.get_remote_yaml("linguist")
     if colors is None:
         colors = dict()
