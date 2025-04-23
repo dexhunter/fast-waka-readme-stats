@@ -104,7 +104,6 @@ async def make_commit_day_time_list(time_zone: str, repositories: Dict, commit_d
 
     sum_day = sum(day_times)
     sum_week = sum(week_days)
-    day_times = day_times[1:] + day_times[:1]
 
     if EM.SHOW_COMMIT:
         dt_names = [f"{DAY_TIME_EMOJI[i]} {FM.t(DAY_TIME_NAMES[i])}" for i in range(len(day_times))]

@@ -173,6 +173,30 @@ class DownloadManager:
             return None
 
     @staticmethod
+    async def get_repo_punch_card(owner: str, repo: str) -> list | None:
+        """
+        Return punch card data for <owner>/<repo> using the
+        lightweight REST endpoint:
+        GET /repos/{owner}/{repo}/stats/punch_card
+        https://docs.github.com/en/rest/metrics/statistics#get-the-hourly-commit-count-for-each-day
+        """
+        url = f"https://api.github.com/repos/{owner}/{repo}/stats/punch_card"
+        headers = {"Authorization": f"Bearer {EM.GH_TOKEN}",
+                   "Accept": "application/vnd.github+json"}
+        try:
+            res = await DownloadManager._client.get(url, headers=headers)
+            if res.status_code in (200, 202):      # 202 = still computing
+                return res.json()
+            elif res.status_code in (204, 404):    # 404 = repo private / not visible
+                DBM.w(f"  ↳ no punch card data available for {owner}/{repo}")
+                return None
+            else:
+                raise Exception(f"Unexpected status code: {res.status_code} – {res.text}")
+        except Exception as exc:
+            DBM.w(f"  ↳ failed to fetch punch card for {owner}/{repo}: {exc}")
+            return None
+
+    @staticmethod
     async def load_remote_resources(**resources: str):
         """
         Prepare DownloadManager to launch GitHub API queries and launch all static queries.

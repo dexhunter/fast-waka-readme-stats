@@ -1,6 +1,6 @@
 from asyncio import sleep, Semaphore, gather
 from json import dumps
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Tuple
 
 from manager_download import DownloadManager as DM
@@ -64,22 +64,57 @@ async def update_data_with_commit_stats(repo_details: Dict, yearly_data: Dict, d
         DBM.w("\t\tStats not (yet) available, skipping repo.")
         return
 
-    # code_weeks -> [ts, add, del]  | convert to your quarterly structure
-    for week_ts, add, delete in code_weeks:
-        dt = datetime.utcfromtimestamp(week_ts)
-        curr_year = dt.year
-        quarter = (dt.month - 1) // 3 + 1
-        lang = (repo_details["primaryLanguage"] or {}).get("name", "Unknown")
-        yearly_data \
-            .setdefault(curr_year, {}) \
-            .setdefault(quarter, {}) \
-            .setdefault(lang, {"add": 0, "del": 0})
-        yearly_data[curr_year][quarter][lang]["add"] += add
-        yearly_data[curr_year][quarter][lang]["del"] += abs(delete)
+    # Get punch card data for commit timing
+    punch = await DM.get_repo_punch_card(owner, repo_details["name"])
+    if not punch:
+        DBM.w("\t\tPunch card data not available, using weekly stats only.")
+        # Fall back to weekly stats if punch card is not available
+        for week_ts, add, delete in code_weeks:
+            dt = datetime.utcfromtimestamp(week_ts)
+            curr_year = dt.year
+            quarter = (dt.month - 1) // 3 + 1
+            lang = (repo_details["primaryLanguage"] or {}).get("name", "Unknown")
+            yearly_data \
+                .setdefault(curr_year, {}) \
+                .setdefault(quarter, {}) \
+                .setdefault(lang, {"add": 0, "del": 0})
+            yearly_data[curr_year][quarter][lang]["add"] += add
+            yearly_data[curr_year][quarter][lang]["del"] += abs(delete)
 
-        date = dt.strftime("%Y-%m-%d")
-        if repo_details["name"] not in date_data:
-            date_data[repo_details["name"]] = dict()
-        if lang not in date_data[repo_details["name"]]:
-            date_data[repo_details["name"]][lang] = dict()
-        date_data[repo_details["name"]][lang][dt.strftime("%Y-%m-%d")] = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            date = dt.strftime("%Y-%m-%d")
+            if repo_details["name"] not in date_data:
+                date_data[repo_details["name"]] = dict()
+            if lang not in date_data[repo_details["name"]]:
+                date_data[repo_details["name"]][lang] = dict()
+            date_data[repo_details["name"]][lang][date] = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    else:
+        # Use punch card data for more accurate commit timing
+        week_total_add = sum(a for _, a, _ in code_weeks)
+        week_total_del = sum(abs(d) for _, _, d in code_weeks)
+        commits_in_punch = sum(c for _, _, c in punch) or 1  # avoid ÷0
+
+        for dow, hour, count in punch:
+            if count == 0:
+                continue
+
+            dt = datetime.utcfromtimestamp(week_ts).replace(tzinfo=timezone.utc)
+            dt += timedelta(days=dow, hours=hour)
+            curr_year = dt.year
+            quarter = (dt.month - 1) // 3 + 1
+            lang = (repo_details["primaryLanguage"] or {}).get("name", "Unknown")
+            yearly_data \
+                .setdefault(curr_year, {}) \
+                .setdefault(quarter, {}) \
+                .setdefault(lang, {"add": 0, "del": 0})
+            # proportional share of weekly LOC
+            weekly_add = week_total_add * count / commits_in_punch
+            weekly_del = week_total_del * count / commits_in_punch
+            yearly_data[curr_year][quarter][lang]["add"] += weekly_add
+            yearly_data[curr_year][quarter][lang]["del"] += weekly_del
+
+            date = dt.strftime("%Y-%m-%d")
+            if repo_details["name"] not in date_data:
+                date_data[repo_details["name"]] = dict()
+            if lang not in date_data[repo_details["name"]]:
+                date_data[repo_details["name"]][lang] = dict()
+            date_data[repo_details["name"]][lang][date] = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
