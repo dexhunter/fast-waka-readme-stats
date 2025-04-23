@@ -156,12 +156,21 @@ class DownloadManager:
         url = f"https://api.github.com/repos/{owner}/{repo}/stats/code_frequency"
         headers = {"Authorization": f"Bearer {EM.GH_TOKEN}",
                    "Accept": "application/vnd.github+json"}
-        res = await DownloadManager._client.get(url, headers=headers)
-        if res.status_code in (200, 202):      # 202 = GitHub is caching the stats
-            return res.json()
-        elif res.status_code == 204:           # no content yet
+        try:
+            res = await DownloadManager._client.get(url, headers=headers)
+            if res.status_code in (200, 202):      # 202 = still computing
+                return res.json()
+            elif res.status_code == 204:           # no content yet
+                DBM.w(f"  ↳ no code frequency data available for {owner}/{repo}")
+                return None
+            elif res.status_code == 404:           # repo private / not visible
+                DBM.w(f"  ↳ repository {owner}/{repo} not found or not accessible")
+                return None
+            else:
+                raise Exception(f"Unexpected status code: {res.status_code} – {res.text}")
+        except Exception as exc:
+            DBM.w(f"  ↳ failed to fetch code frequency for {owner}/{repo}: {exc}")
             return None
-        raise Exception(f"code-freq query failed: {res.status_code} – {res.text}")
 
     @staticmethod
     async def load_remote_resources(**resources: str):
