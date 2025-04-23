@@ -88,19 +88,25 @@ async def make_commit_day_time_list(time_zone: str, repositories: Dict, commit_d
     day_times = [0] * 4  # 0 - 6, 6 - 12, 12 - 18, 18 - 24
     week_days = [0] * 7  # Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday
 
-    for repository in repositories:
-        if repository["name"] not in commit_dates.keys():
-            continue
+    if "__punch__" in commit_dates:
+        # Use punch card data if available
+        day_times = commit_dates["__punch__"]["day"]
+        week_days = commit_dates["__punch__"]["week"]
+    else:
+        # Fall back to old logic (rare)
+        for repository in repositories:
+            if repository["name"] not in commit_dates.keys():
+                continue
 
-        for committed_date in [commit_date for branch in commit_dates[repository["name"]].values() for commit_date in branch.values()]:
-            try:          # full ISO (old path)
-                date = datetime.strptime(committed_date, "%Y-%m-%dT%H:%M:%SZ")
-            except ValueError:  # fallback: date-only (new path)
-                date = datetime.strptime(committed_date, "%Y-%m-%d")
-            date = date.replace(tzinfo=utc).astimezone(timezone(time_zone))
+            for committed_date in [commit_date for branch in commit_dates[repository["name"]].values() for commit_date in branch.values()]:
+                try:          # full ISO (old path)
+                    date = datetime.strptime(committed_date, "%Y-%m-%dT%H:%M:%SZ")
+                except ValueError:  # fallback: date-only (new path)
+                    date = datetime.strptime(committed_date, "%Y-%m-%d")
+                date = date.replace(tzinfo=utc).astimezone(timezone(time_zone))
 
-            day_times[date.hour // 6] += 1
-            week_days[date.isoweekday() - 1] += 1
+                day_times[date.hour // 6] += 1
+                week_days[date.isoweekday() - 1] += 1
 
     sum_day = sum(day_times)
     sum_week = sum(week_days)
