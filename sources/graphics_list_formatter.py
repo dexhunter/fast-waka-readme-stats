@@ -93,8 +93,11 @@ async def make_commit_day_time_list(time_zone: str, repositories: Dict, commit_d
             continue
 
         for committed_date in [commit_date for branch in commit_dates[repository["name"]].values() for commit_date in branch.values()]:
-            local_date = datetime.strptime(committed_date, "%Y-%m-%dT%H:%M:%SZ")
-            date = local_date.replace(tzinfo=utc).astimezone(timezone(time_zone))
+            try:          # full ISO (old path)
+                date = datetime.strptime(committed_date, "%Y-%m-%dT%H:%M:%SZ")
+            except ValueError:  # fallback: date-only (new path)
+                date = datetime.strptime(committed_date, "%Y-%m-%d")
+            date = date.replace(tzinfo=utc).astimezone(timezone(time_zone))
 
             day_times[date.hour // 6] += 1
             week_days[date.isoweekday() - 1] += 1

@@ -82,4 +82,4 @@ async def update_data_with_commit_stats(repo_details: Dict, yearly_data: Dict, d
             date_data[repo_details["name"]] = dict()
         if lang not in date_data[repo_details["name"]]:
             date_data[repo_details["name"]][lang] = dict()
-        date_data[repo_details["name"]][lang][dt.strftime("%Y-%m-%d")] = dt.strftime("%Y-%m-%d")
+        date_data[repo_details["name"]][lang][dt.strftime("%Y-%m-%d")] = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
