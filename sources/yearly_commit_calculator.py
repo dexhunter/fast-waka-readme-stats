@@ -1,6 +1,5 @@
-from asyncio import sleep
+from asyncio import sleep, Semaphore, gather
 from json import dumps
-from re import search
 from datetime import datetime
 from typing import Dict, Tuple
 
@@ -28,13 +27,19 @@ async def calculate_commit_data(repositories: Dict) -> Tuple[Dict, Dict]:
         else:
             DBM.w("No cached commit data found, recalculating...")
 
-    yearly_data = dict()
-    date_data = dict()
-    for ind, repo in enumerate(repositories):
-        if repo["name"] not in EM.IGNORED_REPOS:
-            repo_name = "[private]" if repo["isPrivate"] else f"{repo['owner']['login']}/{repo['name']}"
-            DBM.i(f"\t{ind + 1}/{len(repositories)} Retrieving repo: {repo_name}")
-            await update_data_with_commit_stats(repo, yearly_data, date_data)
+    yearly_data, date_data = dict(), dict()
+
+    # limit concurrency to 10 repos at once with a semaphore
+    sem = Semaphore(10)  # keep well below the 100-request cap
+
+    async def _safe_update(r):
+        if r["name"] not in EM.IGNORED_REPOS:
+            repo_name = "[private]" if r["isPrivate"] else f"{r['owner']['login']}/{r['name']}"
+            DBM.i(f"\tRetrieving repo: {repo_name}")
+            async with sem:
+                await update_data_with_commit_stats(r, yearly_data, date_data)
+
+    await gather(*[_safe_update(r) for r in repositories])
     DBM.g("Commit data calculated!")
 
     if EM.DEBUG_RUN:
@@ -54,33 +59,27 @@ async def update_data_with_commit_stats(repo_details: Dict, yearly_data: Dict, d
     :param date_data: Commit date dictionary to update.
     """
     owner = repo_details["owner"]["login"]
-    branch_data = await DM.get_remote_graphql("repo_branch_list", owner=owner, name=repo_details["name"])
-    if len(branch_data) == 0:
-        DBM.w("\t\tSkipping repo.")
+    code_weeks = await DM.get_repo_code_freq(owner, repo_details["name"])
+    if not code_weeks:
+        DBM.w("\t\tStats not (yet) available, skipping repo.")
         return
 
-    for branch in branch_data:
-        commit_data = await DM.get_remote_graphql("repo_commit_list", owner=owner, name=repo_details["name"], branch=branch["name"], id=GHM.USER.node_id)
-        for commit in commit_data:
-            date = search(r"\d+-\d+-\d+", commit["committedDate"]).group()
-            curr_year = datetime.fromisoformat(date).year
-            quarter = (datetime.fromisoformat(date).month - 1) // 3 + 1
+    # code_weeks -> [ts, add, del]  | convert to your quarterly structure
+    for week_ts, add, delete in code_weeks:
+        dt = datetime.utcfromtimestamp(week_ts)
+        curr_year = dt.year
+        quarter = (dt.month - 1) // 3 + 1
+        lang = (repo_details["primaryLanguage"] or {}).get("name", "Unknown")
+        yearly_data \
+            .setdefault(curr_year, {}) \
+            .setdefault(quarter, {}) \
+            .setdefault(lang, {"add": 0, "del": 0})
+        yearly_data[curr_year][quarter][lang]["add"] += add
+        yearly_data[curr_year][quarter][lang]["del"] += abs(delete)
 
-            if repo_details["name"] not in date_data:
-                date_data[repo_details["name"]] = dict()
-            if branch["name"] not in date_data[repo_details["name"]]:
-                date_data[repo_details["name"]][branch["name"]] = dict()
-            date_data[repo_details["name"]][branch["name"]][commit["oid"]] = commit["committedDate"]
-
-            if repo_details["primaryLanguage"] is not None:
-                if curr_year not in yearly_data:
-                    yearly_data[curr_year] = dict()
-                if quarter not in yearly_data[curr_year]:
-                    yearly_data[curr_year][quarter] = dict()
-                if repo_details["primaryLanguage"]["name"] not in yearly_data[curr_year][quarter]:
-                    yearly_data[curr_year][quarter][repo_details["primaryLanguage"]["name"]] = {"add": 0, "del": 0}
-                yearly_data[curr_year][quarter][repo_details["primaryLanguage"]["name"]]["add"] += commit["additions"]
-                yearly_data[curr_year][quarter][repo_details["primaryLanguage"]["name"]]["del"] += commit["deletions"]
-
-        if not EM.DEBUG_RUN:
-            await sleep(0.4)
+        date = dt.strftime("%Y-%m-%d")
+        if repo_details["name"] not in date_data:
+            date_data[repo_details["name"]] = dict()
+        if lang not in date_data[repo_details["name"]]:
+            date_data[repo_details["name"]][lang] = dict()
+        date_data[repo_details["name"]][lang][dt.strftime("%Y-%m-%d")] = dt.strftime("%Y-%m-%d")

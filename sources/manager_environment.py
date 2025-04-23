@@ -13,14 +13,14 @@ class EnvironmentManager:
 
     _TRUTHY = ["true", "1", "t", "y", "yes"]
 
-    GH_TOKEN = environ["INPUT_GH_TOKEN"]
-    WAKATIME_API_KEY = environ["INPUT_WAKATIME_API_KEY"]
+    GH_TOKEN = getenv("INPUT_GH_TOKEN")
+    WAKATIME_API_KEY = getenv("INPUT_WAKATIME_API_KEY")
 
     SECTION_NAME = getenv("INPUT_SECTION_NAME", "waka")
     PULL_BRANCH_NAME = getenv("INPUT_PULL_BRANCH_NAME", "")
     PUSH_BRANCH_NAME = getenv("INPUT_PUSH_BRANCH_NAME", "")
 
-    SHOW_OS = getenv("INPUT_SHOW_OS", "False").lower() in _TRUTHY
+    SHOW_OS = getenv("INPUT_SHOW_OS", "True").lower() in _TRUTHY
     SHOW_PROJECTS = getenv("INPUT_SHOW_PROJECTS", "True").lower() in _TRUTHY
     SHOW_EDITORS = getenv("INPUT_SHOW_EDITORS", "True").lower() in _TRUTHY
     SHOW_TIMEZONE = getenv("INPUT_SHOW_TIMEZONE", "True").lower() in _TRUTHY
@@ -44,7 +44,7 @@ class EnvironmentManager:
     LOCALE = getenv("INPUT_LOCALE", "en")
     UPDATED_DATE_FORMAT = getenv("INPUT_UPDATED_DATE_FORMAT", "%d/%m/%Y %H:%M:%S")
     IGNORED_REPOS = getenv("INPUT_IGNORED_REPOS", "").replace(" ", "").split(",")
-    SYMBOL_VERSION = int(getenv("INPUT_SYMBOL_VERSION"))
+    SYMBOL_VERSION = int(getenv("INPUT_SYMBOL_VERSION", "1"))
 
     DEBUG_LOGGING = getenv("INPUT_DEBUG_LOGGING", "0").lower() in _TRUTHY
     DEBUG_RUN = getenv("DEBUG_RUN", "False").lower() in _TRUTHY

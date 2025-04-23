@@ -43,7 +43,7 @@ async def create_loc_graph(yearly_data: Dict, save_path: str):
     cumulative = zeros((years, 4, 2), dtype=int)
 
     for key, value in languages_all_loc.items():
-        color = colors[key].get("color", "tab:gray")
+        color = colors.get(key, {}).get("color", "tab:gray")
         language_handles += [mpatches.Patch(color=color, label=key)]
 
         for quarter in range(4):

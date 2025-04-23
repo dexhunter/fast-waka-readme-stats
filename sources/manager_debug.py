@@ -1,11 +1,13 @@
 from datetime import datetime
-from logging import getLogger, Logger, StreamHandler
+from logging import DEBUG, INFO, WARNING, ERROR, CRITICAL, getLogger, Logger, StreamHandler, Formatter
 from string import Template
 from typing import Dict
+from os import environ
 
 from humanize import precisedelta
 
 from manager_environment import EnvironmentManager as EM
+from manager_file import FileManager as FM
 
 
 def init_debug_manager():
@@ -14,10 +16,16 @@ def init_debug_manager():
     - Setup headers for GitHub GraphQL requests.
     - Launch static queries in background.
     """
-    DebugManager.create_logger("DEBUG" if EM.DEBUG_LOGGING else "ERROR")
+    DebugManager.create_logger()
 
 
 class DebugManager:
+    """
+    Class for handling debug logging.
+    """
+
+    _logger = None
+
     _COLOR_RESET = "\u001B[0m"
     _COLOR_RED = "\u001B[31m"
     _COLOR_GREEN = "\u001B[32m"
@@ -27,13 +35,18 @@ class DebugManager:
     _DATE_TEMPLATE = "date"
     _TIME_TEMPLATE = "time"
 
-    _logger: Logger
-
     @staticmethod
-    def create_logger(level: str):
-        DebugManager._logger = getLogger(__name__)
+    def create_logger(level: int = DEBUG) -> None:
+        """
+        Create logger with specified level.
+        :param level: Logging level.
+        """
+        DebugManager._logger = getLogger("waka-readme-stats")
         DebugManager._logger.setLevel(level)
-        DebugManager._logger.addHandler(StreamHandler())
+
+        handler = StreamHandler()
+        handler.setFormatter(Formatter("%(message)s"))
+        DebugManager._logger.addHandler(handler)
 
     @staticmethod
     def _process_template(message: str, kwargs: Dict) -> str:

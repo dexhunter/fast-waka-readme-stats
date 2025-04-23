@@ -1,8 +1,9 @@
-from asyncio import Task
+from asyncio import Task, sleep
 from hashlib import md5
 from json import dumps
 from string import Template
 from typing import Awaitable, Dict, Callable, Optional, List, Tuple
+import time
 
 from httpx import AsyncClient
 from yaml import safe_load
@@ -145,6 +146,24 @@ class DownloadManager:
     _REMOTE_RESOURCES_CACHE = dict()
 
     @staticmethod
+    async def get_repo_code_freq(owner: str, repo: str) -> list | None:
+        """
+        Return weekly additions/deletions for <owner>/<repo> using the
+        lightweight REST endpoint:
+        GET /repos/{owner}/{repo}/stats/code_frequency
+        https://docs.github.com/en/rest/metrics/statistics#get-the-weekly-commit-activity
+        """
+        url = f"https://api.github.com/repos/{owner}/{repo}/stats/code_frequency"
+        headers = {"Authorization": f"Bearer {EM.GH_TOKEN}",
+                   "Accept": "application/vnd.github+json"}
+        res = await DownloadManager._client.get(url, headers=headers)
+        if res.status_code in (200, 202):      # 202 = GitHub is caching the stats
+            return res.json()
+        elif res.status_code == 204:           # no content yet
+            return None
+        raise Exception(f"code-freq query failed: {res.status_code} – {res.text}")
+
+    @staticmethod
     async def load_remote_resources(**resources: str):
         """
         Prepare DownloadManager to launch GitHub API queries and launch all static queries.
@@ -229,6 +248,11 @@ class DownloadManager:
         res = await DownloadManager._client.post(
             "https://api.github.com/graphql", json={"query": Template(GITHUB_API_QUERIES[query]).substitute(kwargs)}, headers=headers
         )
+        # back-off if primary limit exhausted
+        if res.headers.get("x-ratelimit-remaining") == "0":
+            reset = int(res.headers["x-ratelimit-reset"])
+            await sleep(max(0, reset - time.time()) + 1)
+            return await DownloadManager._fetch_graphql_query(query, retries_count, **kwargs)
         if res.status_code == 200:
             return res.json()
         elif res.status_code == 502 and retries_count > 0:
