@@ -199,8 +199,11 @@ async def get_stats() -> str:
         stats += f"{make_language_per_repo_list(repositories)}\n\n"
 
     if EM.SHOW_LOC_CHART:
-        await create_loc_graph(yearly_data, GRAPH_PATH)
-        stats += f"**{FM.t('Timeline')}**\n\n{GHM.update_chart('Lines of Code', GRAPH_PATH)}"
+        if yearly_data:
+            await create_loc_graph(yearly_data, GRAPH_PATH)
+            stats += f"**{FM.t('Timeline')}**\n\n{GHM.update_chart('Lines of Code', GRAPH_PATH)}"
+        else:
+            DBM.w("No commit data – skipping LOC chart.")
 
     if EM.SHOW_UPDATED_DATE:
         DBM.i("Adding last updated time...")
