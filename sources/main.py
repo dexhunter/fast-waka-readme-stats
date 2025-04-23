@@ -5,6 +5,7 @@ from asyncio import run
 from datetime import datetime
 from typing import Dict
 from urllib.parse import quote
+from github.GithubException import GithubException
 
 from humanize import intword, naturalsize, intcomma
 
@@ -173,9 +174,14 @@ async def get_stats() -> str:
             stats += f"![Code Time](http://img.shields.io/badge/{quote('Code Time')}-{quote(str(data['data']['text']))}-blue)\n\n"
 
     if EM.SHOW_PROFILE_VIEWS:
-        DBM.i("Adding profile views info...")
-        data = GHM.REMOTE.get_views_traffic(per="week")
-        stats += f"![Profile Views](http://img.shields.io/badge/{quote(FM.t('Profile Views'))}-{data['count']}-blue)\n\n"
+        DBM.i("Adding profile views info…")
+        try:
+            data = GHM.REMOTE.get_views_traffic(per="week")
+            views = data.get("count", 0) if isinstance(data, dict) else 0
+        except GithubException as exc:
+            DBM.w(f"  ↳ profile views API unavailable: {exc.status}")
+            views = 0
+        stats += f"![Profile Views](http://img.shields.io/badge/{quote(FM.t('Profile Views'))}-{views}-blue)\n\n"
 
     if EM.SHOW_LINES_OF_CODE:
         DBM.i("Adding lines of code info...")
