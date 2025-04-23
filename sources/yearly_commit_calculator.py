@@ -88,17 +88,9 @@ async def update_data_with_commit_stats(repo_details: Dict, yearly_data: Dict, d
                 date_data[repo_details["name"]][lang] = dict()
             date_data[repo_details["name"]][lang][date] = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     else:
-        # Use punch card data for more accurate commit timing
-        week_total_add = sum(a for _, a, _ in code_weeks)
-        week_total_del = sum(abs(d) for _, _, d in code_weeks)
-        commits_in_punch = sum(c for _, _, c in punch) or 1  # avoid ÷0
-
-        for dow, hour, count in punch:
-            if count == 0:
-                continue
-
-            dt = datetime.utcfromtimestamp(week_ts).replace(tzinfo=timezone.utc)
-            dt += timedelta(days=dow, hours=hour)
+        # Use weekly commit data
+        for week_ts, add, delete in code_weeks:
+            dt = datetime.utcfromtimestamp(week_ts)
             curr_year = dt.year
             quarter = (dt.month - 1) // 3 + 1
             lang = (repo_details["primaryLanguage"] or {}).get("name", "Unknown")
@@ -106,11 +98,8 @@ async def update_data_with_commit_stats(repo_details: Dict, yearly_data: Dict, d
                 .setdefault(curr_year, {}) \
                 .setdefault(quarter, {}) \
                 .setdefault(lang, {"add": 0, "del": 0})
-            # proportional share of weekly LOC
-            weekly_add = week_total_add * count / commits_in_punch
-            weekly_del = week_total_del * count / commits_in_punch
-            yearly_data[curr_year][quarter][lang]["add"] += weekly_add
-            yearly_data[curr_year][quarter][lang]["del"] += weekly_del
+            yearly_data[curr_year][quarter][lang]["add"] += add
+            yearly_data[curr_year][quarter][lang]["del"] += abs(delete)
 
             date = dt.strftime("%Y-%m-%d")
             if repo_details["name"] not in date_data:
