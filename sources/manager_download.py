@@ -146,7 +146,32 @@ class DownloadManager:
     _REMOTE_RESOURCES_CACHE = dict()
 
     @staticmethod
-    async def get_repo_code_freq(owner: str, repo: str, max_retries: int = 5) -> list | None:
+    async def _get_stats(url: str, headers: dict, max_tries: int = 6, delay: int = 3) -> dict | None:
+        """
+        Generic helper: retry 202 every <delay>s, bail on 422/404.
+        :param url: The URL to fetch
+        :param headers: Headers to use for the request
+        :param max_tries: Maximum number of retry attempts
+        :param delay: Delay between retries in seconds
+        :return: JSON response or None if not found/not available
+        """
+        for _ in range(max_tries):
+            try:
+                r = await DownloadManager._client.get(url, headers=headers)
+                if r.status_code == 200:
+                    return r.json()
+                if r.status_code == 202:
+                    await sleep(delay)
+                    continue
+                if r.status_code in (404, 204, 422):
+                    return None
+                raise Exception(f"Unexpected status {r.status_code}: {r.text!s}")
+            except Exception as exc:
+                DBM.w(f"  ↳ failed to fetch stats: {exc}")
+                return None
+
+    @staticmethod
+    async def get_repo_code_freq(owner: str, repo: str) -> list | None:
         """
         Return weekly additions/deletions for <owner>/<repo> using the
         lightweight REST endpoint:
@@ -156,20 +181,7 @@ class DownloadManager:
         url = f"https://api.github.com/repos/{owner}/{repo}/stats/code_frequency"
         headers = {"Authorization": f"Bearer {EM.GH_TOKEN}",
                    "Accept": "application/vnd.github+json"}
-        
-        for _ in range(max_retries):
-            try:
-                res = await DownloadManager._client.get(url, headers=headers)
-                if res.status_code == 200:
-                    return res.json()
-                if res.status_code not in (202, 204):
-                    break
-                await sleep(4)  # wait for GitHub to finish computing
-            except Exception as exc:
-                DBM.w(f"  ↳ failed to fetch code frequency for {owner}/{repo}: {exc}")
-                break
-            
-        return None  # fallback => repo skipped
+        return await DownloadManager._get_stats(url, headers)
 
     @staticmethod
     async def get_repo_punch_card(owner: str, repo: str) -> list | None:
@@ -182,18 +194,7 @@ class DownloadManager:
         url = f"https://api.github.com/repos/{owner}/{repo}/stats/punch_card"
         headers = {"Authorization": f"Bearer {EM.GH_TOKEN}",
                    "Accept": "application/vnd.github+json"}
-        try:
-            res = await DownloadManager._client.get(url, headers=headers)
-            if res.status_code in (200, 202):      # 202 = still computing
-                return res.json()
-            elif res.status_code in (204, 404):    # 404 = repo private / not visible
-                DBM.w(f"  ↳ no punch card data available for {owner}/{repo}")
-                return None
-            else:
-                raise Exception(f"Unexpected status code: {res.status_code} – {res.text}")
-        except Exception as exc:
-            DBM.w(f"  ↳ failed to fetch punch card for {owner}/{repo}: {exc}")
-            return None
+        return await DownloadManager._get_stats(url, headers)
 
     @staticmethod
     async def load_remote_resources(**resources: str):
