@@ -146,7 +146,7 @@ class DownloadManager:
     _REMOTE_RESOURCES_CACHE = dict()
 
     @staticmethod
-    async def get_repo_code_freq(owner: str, repo: str) -> list | None:
+    async def get_repo_code_freq(owner: str, repo: str, max_retries: int = 5) -> list | None:
         """
         Return weekly additions/deletions for <owner>/<repo> using the
         lightweight REST endpoint:
@@ -156,21 +156,20 @@ class DownloadManager:
         url = f"https://api.github.com/repos/{owner}/{repo}/stats/code_frequency"
         headers = {"Authorization": f"Bearer {EM.GH_TOKEN}",
                    "Accept": "application/vnd.github+json"}
-        try:
-            res = await DownloadManager._client.get(url, headers=headers)
-            if res.status_code in (200, 202):      # 202 = still computing
-                return res.json()
-            elif res.status_code == 204:           # no content yet
-                DBM.w(f"  ↳ no code frequency data available for {owner}/{repo}")
-                return None
-            elif res.status_code == 404:           # repo private / not visible
-                DBM.w(f"  ↳ repository {owner}/{repo} not found or not accessible")
-                return None
-            else:
-                raise Exception(f"Unexpected status code: {res.status_code} – {res.text}")
-        except Exception as exc:
-            DBM.w(f"  ↳ failed to fetch code frequency for {owner}/{repo}: {exc}")
-            return None
+        
+        for _ in range(max_retries):
+            try:
+                res = await DownloadManager._client.get(url, headers=headers)
+                if res.status_code == 200:
+                    return res.json()
+                if res.status_code not in (202, 204):
+                    break
+                await sleep(4)  # wait for GitHub to finish computing
+            except Exception as exc:
+                DBM.w(f"  ↳ failed to fetch code frequency for {owner}/{repo}: {exc}")
+                break
+            
+        return None  # fallback => repo skipped
 
     @staticmethod
     async def get_repo_punch_card(owner: str, repo: str) -> list | None:
